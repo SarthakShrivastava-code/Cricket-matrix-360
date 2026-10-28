@@ -6,6 +6,7 @@ import pickle
 import plotly.express as px
 import plotly.graph_objects as go
 import io
+import os
 
 # Optional ReportLab PDF Import
 try:
@@ -187,7 +188,27 @@ st.markdown("""
 # Database Connection Helper
 @st.cache_resource
 def get_db_connection():
-    return sqlite3.connect("data/cricket_matrix.db", check_same_thread=False)
+    db_path = "data/cricket_matrix.db"
+    os.makedirs("data", exist_ok=True)
+    connection = sqlite3.connect(db_path, check_same_thread=False)
+
+    cursor = connection.cursor()
+    cursor.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='deliveries'"
+    )
+    if not cursor.fetchone():
+        cursor.execute("""
+            CREATE TABLE deliveries (
+                match_id TEXT, season TEXT, match_date TEXT, venue TEXT, innings INTEGER,
+                ball REAL, over_num INTEGER, batter TEXT, non_striker TEXT, bowler TEXT,
+                runs_batter INTEGER, runs_extra INTEGER, runs_total INTEGER,
+                is_wide INTEGER, is_noball INTEGER, is_bye INTEGER, is_legbye INTEGER,
+                dismissal_kind TEXT, player_dismissed TEXT, is_wicket INTEGER
+            )
+        """)
+        connection.commit()
+
+    return connection
 
 # Model Loader
 @st.cache_resource
