@@ -56,6 +56,22 @@ def match_year(info):
     return year if MIN_YEAR <= year <= MAX_YEAR else None
 
 
+def phase_for_delivery(match_type, over_num):
+    if match_type == "ODI":
+        if over_num < 10:
+            return "Powerplay"
+        if over_num < 40:
+            return "Middle"
+        return "Death"
+    if match_type == "T20I":
+        if over_num < 6:
+            return "Powerplay"
+        if over_num < 15:
+            return "Middle"
+        return "Death"
+    return "Test"
+
+
 def aggregate_match(file_path, batting, bowling):
     with file_path.open("r", encoding="utf-8") as file:
         data = json.load(file)
@@ -76,20 +92,10 @@ def aggregate_match(file_path, batting, bowling):
     if year is None:
         return False
 
-    for innings_index, innings in enumerate(data.get("innings", [])):
+    for innings in data.get("innings", []):
         for over_item in innings.get("overs", []):
             over_num = over_item.get("over", 0)
-            if match_type == "Test":
-                if innings_index < 2:
-                    phase = "Setting"
-                elif innings_index == 2:
-                    phase = "Third Innings Pressure"
-                else:
-                    phase = "Fourth Innings Chase"
-            elif match_type == "ODI":
-                phase = "Powerplay" if over_num < 10 else "Middle" if over_num < 40 else "Death"
-            else:
-                phase = "Powerplay" if over_num < 6 else "Middle" if over_num < 15 else "Death"
+            phase = phase_for_delivery(match_type, over_num)
             for delivery in over_item.get("deliveries", []):
                 batter = clean_name(delivery.get("batter"))
                 bowler = clean_name(delivery.get("bowler"))

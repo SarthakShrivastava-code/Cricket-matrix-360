@@ -434,60 +434,61 @@ with tab2:
     
     col1, col2 = st.columns(2)
     with col1:
-        if selected_formats == ["Test"]:
-            st.info(
-                "Test phases compare the first two innings (setting) with "
-                "the third and fourth innings (pressure / chase)."
-            )
-            phase_options = [
-                "Innings 1 & 2 (Setting)",
-                "Innings 3 & 4 (Pressure / Chase)",
-            ]
-            phase_mapping = {
-                phase_options[0]: ["Setting"],
-                phase_options[1]: [
-                    "Third Innings Pressure",
-                    "Fourth Innings Chase",
-                ],
-            }
-        elif "ODI" in selected_formats and "T20I" not in selected_formats:
+        phase_mapping = {}
+        phase_options = []
+        if "ODI" in selected_formats and "T20I" not in selected_formats:
             phase_options = [
                 "Powerplay (Overs 1–10)",
                 "Middle Overs (Overs 11–40)",
                 "Death Overs (Overs 41–50)",
             ]
-            phase_mapping = dict(zip(
-                phase_options,
-                ["Powerplay", "Middle", "Death"],
+            phase_mapping.update(zip(
+                phase_options, ["Powerplay", "Middle", "Death"],
             ))
-        else:
+        elif "T20I" in selected_formats and "ODI" not in selected_formats:
             phase_options = [
                 "Powerplay (Overs 1–6)",
                 "Middle Overs (Overs 7–15)",
                 "Death Overs (Overs 16–20)",
             ]
-            phase_mapping = dict(zip(
-                phase_options,
-                ["Powerplay", "Middle", "Death"],
+            phase_mapping.update(zip(
+                phase_options, ["Powerplay", "Middle", "Death"],
             ))
+        elif "ODI" in selected_formats and "T20I" in selected_formats:
+            phase_options = [
+                "Powerplay (ODI 1–10 / T20I 1–6)",
+                "Middle Overs (ODI 11–40 / T20I 7–15)",
+                "Death Overs (ODI 41–50 / T20I 16–20)",
+            ]
+            phase_mapping.update(zip(
+                phase_options, ["Powerplay", "Middle", "Death"],
+            ))
+        if "Test" in selected_formats:
+            test_phase_label = "All Test Match Innings"
+            phase_options.append(test_phase_label)
+            phase_mapping[test_phase_label] = "Test"
+
+        if selected_formats == ["Test"]:
+            st.info("Test statistics are aggregated across all innings.")
+
         phase_choice = st.selectbox("Select Match Phase", phase_options)
     with col2:
         search_batter = st.selectbox("🔍 Search & Select Player (Type to Filter)", all_batters_list, index=0)
         
     st.markdown('</div>', unsafe_allow_html=True)
     
-    target_phases = phase_mapping[phase_choice]
-    phase_filters = ["year BETWEEN ? AND ?"]
-    phase_params = [year_range[0], year_range[1]]
-    phase_filters.append(
-        f"phase IN ({','.join('?' for _ in target_phases)})"
-    )
-    phase_params.extend(target_phases)
-    if selected_formats:
-        phase_filters.append(
-            f"format IN ({','.join('?' for _ in selected_formats)})"
-        )
-        phase_params.extend(selected_formats)
+    target_phase = phase_mapping[phase_choice]
+    phase_filters = [
+        f"format IN ({','.join('?' for _ in selected_formats)})",
+        "year BETWEEN ? AND ?",
+        "phase = ?",
+    ]
+    phase_params = [
+        *selected_formats,
+        year_range[0],
+        year_range[1],
+        target_phase,
+    ]
     if search_batter != "All Players":
         phase_filters.append("player = ?")
         phase_params.append(search_batter)
@@ -497,14 +498,14 @@ with tab2:
         player AS "Batter",
         SUM(runs) AS "Phase Runs",
         SUM(balls) AS "Phase Balls",
-        ROUND(SUM(runs) * 100.0 / NULLIF(SUM(balls), 0), 2) AS "Strike Rate",
-        ROUND(SUM(dot) * 100.0 / NULLIF(SUM(balls), 0), 2) AS "Dot Ball %",
-        ROUND((SUM(fours) + SUM(sixes)) * 100.0 / NULLIF(SUM(balls), 0), 2) AS "Boundary %"
+        ROUND(CAST(SUM(runs) AS FLOAT) / NULLIF(SUM(balls), 0) * 100, 2) AS "Strike Rate",
+        ROUND(CAST(SUM(dot) AS FLOAT) / NULLIF(SUM(balls), 0) * 100, 2) AS "Dot Ball %",
+        ROUND(CAST(SUM(fours + sixes) AS FLOAT) / NULLIF(SUM(balls), 0) * 100, 2) AS "Boundary %"
     FROM player_batting_summary
     WHERE {' AND '.join(phase_filters)}
     GROUP BY player
-    HAVING SUM(balls) >= 30
-    ORDER BY "Strike Rate" DESC
+    {"HAVING SUM(balls) >= 10" if search_batter == "All Players" else ""}
+    ORDER BY "Phase Runs" DESC
     """
     
     df_pdeep = pd.read_sql_query(query_phase_deep, conn, params=phase_params)
@@ -542,69 +543,68 @@ with tab2:
 # -------------------------------------------------------------
 with tab3:
     st.markdown('<div class="executive-card">', unsafe_allow_html=True)
-    test_only = selected_formats == ["Test"]
-    if test_only:
-        st.markdown(
-            '<h3 style="color: #000000 !important;">'
-            '⚡ Late-Innings Pressure & Fourth Innings Specialists</h3>',
-            unsafe_allow_html=True,
+    st.markdown(
+        '<h3 style="color: #000000 !important;">'
+        '⚡ Death Overs Bowling Performance</h3>',
+        unsafe_allow_html=True,
+    )
+    death_formats = [fmt for fmt in selected_formats if fmt in {"T20I", "ODI"}]
+    overs_labels = {
+        "T20I": "Overs 16–20",
+        "ODI": "Overs 41–50",
+    }
+    if death_formats:
+        active_formats_str = " & ".join(death_formats)
+        overs_context = " / ".join(
+            overs_labels[fmt] for fmt in death_formats
         )
         st.caption(
-            "Displaying player statistics in fourth-innings pressure chases "
-            "for Test matches."
+            f"Evaluating Death Overs performance for **{active_formats_str}** "
+            f"({overs_context})."
         )
-        death_phase = "Fourth Innings Chase"
-        death_formats = ["Test"]
-        overs_label = "Fourth-Innings Overs"
     else:
-        st.markdown(
-            '<h3 style="color: #000000 !important;">'
-            '⚡ Death Overs Bowling Performance</h3>',
-            unsafe_allow_html=True,
+        st.caption(
+            "Death-over analysis is available for T20I and ODI formats; "
+            "Test matches do not have a fixed death-over phase."
         )
-        if "ODI" in selected_formats and "T20I" not in selected_formats:
-            st.caption(
-                "Evaluating Death Overs performance specifically for "
-                "**ODIs (Overs 41–50)**."
-            )
-        else:
-            st.caption(
-                "Evaluating Death Overs performance specifically for "
-                "**T20Is (Overs 16–20)**."
-            )
-        death_phase = "Death"
-        death_formats = [fmt for fmt in selected_formats if fmt in {"T20I", "ODI"}]
-        overs_label = "Death Overs"
     
     search_bowler = st.selectbox("🔍 Search & Select Bowler (Type to Filter)", all_bowlers_list, index=0)
     st.markdown('</div>', unsafe_allow_html=True)
-    
-    bowling_filters = ["phase = ?", "year BETWEEN ? AND ?"]
-    bowling_params = [death_phase, year_range[0], year_range[1]]
-    bowling_filters.append(
-        f"format IN ({','.join('?' for _ in death_formats)})"
-    )
-    bowling_params.extend(death_formats)
-    if search_bowler != "All Bowlers":
-        bowling_filters.append("player = ?")
-        bowling_params.append(search_bowler)
 
-    query_death = f"""
+    if death_formats:
+        bowling_filters = [
+            f"format IN ({','.join('?' for _ in death_formats)})",
+            "year BETWEEN ? AND ?",
+            "phase = ?",
+        ]
+        bowling_params = [
+            *death_formats,
+            year_range[0],
+            year_range[1],
+            "Death",
+        ]
+        if search_bowler != "All Bowlers":
+            bowling_filters.append("player = ?")
+            bowling_params.append(search_bowler)
+
+        query_death = f"""
     SELECT 
         player AS "Bowler",
-        ROUND(SUM(balls_bowled) / 6.0, 1) AS "{overs_label}",
+        ROUND(CAST(SUM(balls_bowled) AS FLOAT) / 6, 1) AS "Death Overs",
         SUM(runs_conceded) AS "Runs Conceded",
         SUM(wickets) AS "Wickets",
-        ROUND(SUM(runs_conceded) * 6.0 / NULLIF(SUM(balls_bowled), 0), 2) AS "Economy",
-        ROUND(SUM(dot) * 100.0 / NULLIF(SUM(balls_bowled), 0), 2) AS "Dot %"
+        ROUND(CAST(SUM(runs_conceded) AS FLOAT) / NULLIF(CAST(SUM(balls_bowled) AS FLOAT) / 6, 0), 2) AS "Economy",
+        ROUND(CAST(SUM(dot) AS FLOAT) / NULLIF(SUM(balls_bowled), 0) * 100, 2) AS "Dot Ball %"
     FROM player_bowling_summary
     WHERE {' AND '.join(bowling_filters)}
     GROUP BY player
-    HAVING SUM(balls_bowled) >= 30
-    ORDER BY "Economy" ASC
-    """
+    HAVING SUM(balls_bowled) >= 12
+    ORDER BY "Wickets" DESC, "Economy" ASC
+        """
     
-    df_death = pd.read_sql_query(query_death, conn, params=bowling_params)
+        df_death = pd.read_sql_query(query_death, conn, params=bowling_params)
+    else:
+        df_death = pd.DataFrame()
     
     if not df_death.empty:
         top1 = df_death.iloc[0]
@@ -615,7 +615,7 @@ with tab3:
         with c1:
             st.markdown(f"""
             <div class="metric-card">
-                <div class="metric-card-lbl">🥇 Most Economical Death Bowler</div>
+                <div class="metric-card-lbl">🥇 Leading Death Bowler</div>
                 <div class="metric-card-val">{top1['Bowler']}</div>
                 <div style="font-size:0.9rem; color:#475569; font-weight:700;">Econ: {top1['Economy']} | Wkts: {top1['Wickets']}</div>
             </div>
@@ -623,7 +623,7 @@ with tab3:
         with c2:
             st.markdown(f"""
             <div class="metric-card">
-                <div class="metric-card-lbl">🥈 Runner Up Specialist</div>
+                <div class="metric-card-lbl">🥈 Next Death Bowler</div>
                 <div class="metric-card-val">{top2['Bowler']}</div>
                 <div style="font-size:0.9rem; color:#475569; font-weight:700;">Econ: {top2['Economy']} | Wkts: {top2['Wickets']}</div>
             </div>
@@ -652,12 +652,12 @@ with tab3:
             fig_quad = px.scatter(
                 df_death,
                 x='Economy',
-                y='Dot %',
+                y='Dot Ball %',
                 size='Wickets',
                 hover_name='Bowler',
                 color='Economy',
                 color_continuous_scale='Greys_r',
-                labels={'Economy': 'Death Economy Rate', 'Dot %': 'Dot Ball %'}
+                labels={'Economy': 'Death Economy Rate', 'Dot Ball %': 'Dot Ball %'}
             )
             fig_quad.update_layout(plot_bgcolor='white', paper_bgcolor='white', font=dict(color='#000000'))
             st.plotly_chart(fig_quad, use_container_width=True)
