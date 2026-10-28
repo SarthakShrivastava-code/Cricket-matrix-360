@@ -585,13 +585,17 @@ with tab4:
     col1, col2 = st.columns(2)
     
     player_pool = all_bowlers_list if comp_type == "Bowlers" else all_batters_list
-    default_p1 = "V Kohli" if "V Kohli" in player_pool else player_pool[1]
-    default_p2 = "RG Sharma" if "RG Sharma" in player_pool else player_pool[2]
+
+    # Safe default selection fallback
+    default_p1 = "V Kohli" if "V Kohli" in player_pool else (player_pool[1] if len(player_pool) > 1 else player_pool[0])
+    default_p2 = "RG Sharma" if "RG Sharma" in player_pool else (player_pool[2] if len(player_pool) > 2 else player_pool[0])
     
     with col1:
-        p1 = st.selectbox("🔍 Search & Select Player 1", player_pool, index=player_pool.index(default_p1) if default_p1 in player_pool else 1)
+        p1_idx = player_pool.index(default_p1) if default_p1 in player_pool else 0
+        p1 = st.selectbox("🔍 Search & Select Player 1", player_pool, index=p1_idx)
     with col2:
-        p2 = st.selectbox("🔍 Search & Select Player 2", player_pool, index=player_pool.index(default_p2) if default_p2 in player_pool else 2)
+        p2_idx = player_pool.index(default_p2) if default_p2 in player_pool else 0
+        p2 = st.selectbox("🔍 Search & Select Player 2", player_pool, index=p2_idx)
         
     st.markdown('</div>', unsafe_allow_html=True)
     
@@ -647,8 +651,14 @@ with tab5:
     st.markdown('<div class="executive-card">', unsafe_allow_html=True)
     st.markdown('<h3 style="color: #000000 !important;">📄 Executive Deep Scouting Brief</h3>', unsafe_allow_html=True)
     
-    default_scout = "Suryakumar Yadav" if "Suryakumar Yadav" in all_batters_list else all_batters_list[1]
-    scout_player = st.selectbox("🔍 Search & Select Player for Deep Brief", [b for b in all_batters_list if b != "All Players"], index=[b for b in all_batters_list if b != "All Players"].index(default_scout) if default_scout in all_batters_list else 0)
+    scout_options = [b for b in all_batters_list if b != "All Players"]
+    if not scout_options:
+        scout_options = ["Demo Player"]
+
+    default_scout = "Suryakumar Yadav" if "Suryakumar Yadav" in scout_options else scout_options[0]
+    scout_idx = scout_options.index(default_scout) if default_scout in scout_options else 0
+
+    scout_player = st.selectbox("🔍 Search & Select Player for Deep Brief", scout_options, index=scout_idx)
     
     st.markdown('</div>', unsafe_allow_html=True)
     
