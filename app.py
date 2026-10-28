@@ -210,14 +210,21 @@ def get_db_connection():
     cursor.execute("SELECT COUNT(*) FROM deliveries")
     if cursor.fetchone()[0] == 0:
         demo_data = [
-            ('m1', '2023', '2023-04-01', 'Wankhede', 1, 1.1, 0, 'V Kohli', 'RG Sharma', 'JJ Bumrah', 4, 0, 4, 0, 0, 0, 0, None, None, 0),
-            ('m1', '2023', '2023-04-01', 'Wankhede', 1, 1.2, 0, 'V Kohli', 'RG Sharma', 'JJ Bumrah', 6, 0, 6, 0, 0, 0, 0, None, None, 0),
+            ('m1', '2023', '2023-04-01', 'Wankhede', 1, 1.1, 1, 'V Kohli', 'RG Sharma', 'JJ Bumrah', 4, 0, 4, 0, 0, 0, 0, None, None, 0),
+            ('m1', '2023', '2023-04-01', 'Wankhede', 1, 1.2, 2, 'V Kohli', 'RG Sharma', 'JJ Bumrah', 6, 0, 6, 0, 0, 0, 0, None, None, 0),
+            ('m1', '2023', '2023-04-01', 'Wankhede', 1, 2.1, 3, 'RG Sharma', 'V Kohli', 'B Kumar', 4, 0, 4, 0, 0, 0, 0, None, None, 0),
+            ('m1', '2023', '2023-04-01', 'Wankhede', 1, 3.1, 4, 'KL Rahul', 'V Kohli', 'B Kumar', 4, 0, 4, 0, 0, 0, 0, None, None, 0),
             ('m1', '2023', '2023-04-01', 'Wankhede', 1, 8.1, 8, 'Suryakumar Yadav', 'V Kohli', 'AR Patel', 4, 0, 4, 0, 0, 0, 0, None, None, 0),
-            ('m1', '2023', '2023-04-01', 'Wankhede', 1, 18.2, 17, 'Suryakumar Yadav', 'V Kohli', 'JJ Bumrah', 6, 0, 6, 0, 0, 0, 0, None, None, 0),
-            ('m1', '2023', '2023-04-01', 'Wankhede', 1, 19.5, 19, 'RG Sharma', 'V Kohli', 'B Kumar', 0, 0, 0, 0, 0, 0, 0, 'caught', 'RG Sharma', 1),
+            ('m1', '2023', '2023-04-01', 'Wankhede', 1, 9.1, 9, 'Suryakumar Yadav', 'V Kohli', 'AR Patel', 6, 0, 6, 0, 0, 0, 0, None, None, 0),
+            ('m1', '2023', '2023-04-01', 'Wankhede', 1, 10.1, 10, 'HH Pandya', 'Suryakumar Yadav', 'YS Chahal', 6, 0, 6, 0, 0, 0, 0, None, None, 0),
+            ('m1', '2023', '2023-04-01', 'Wankhede', 1, 16.1, 16, 'Suryakumar Yadav', 'HH Pandya', 'JJ Bumrah', 4, 0, 4, 0, 0, 0, 0, None, None, 0),
+            ('m1', '2023', '2023-04-01', 'Wankhede', 1, 17.1, 17, 'HH Pandya', 'Suryakumar Yadav', 'B Kumar', 6, 0, 6, 0, 0, 0, 0, None, None, 0),
+            ('m1', '2023', '2023-04-01', 'Wankhede', 1, 18.1, 18, 'Suryakumar Yadav', 'HH Pandya', 'JJ Bumrah', 6, 0, 6, 0, 0, 0, 0, None, None, 0),
+            ('m1', '2023', '2023-04-01', 'Wankhede', 1, 19.1, 19, 'HH Pandya', 'Suryakumar Yadav', 'B Kumar', 0, 0, 0, 0, 0, 0, 0, 'caught', 'HH Pandya', 1),
+            ('m1', '2023', '2023-04-01', 'Wankhede', 1, 19.2, 19, 'MS Dhoni', 'Suryakumar Yadav', 'B Kumar', 6, 0, 6, 0, 0, 0, 0, None, None, 0),
         ]
         insert_sql = "INSERT INTO deliveries VALUES (" + ",".join("?" for _ in range(20)) + ")"
-        for demo_match in range(30):
+        for demo_match in range(40):
             cursor.executemany(
                 insert_sql,
                 [(f"demo-{demo_match + 1}", *row[1:]) for row in demo_data],
