@@ -206,8 +206,24 @@ def get_db_connection():
                 dismissal_kind TEXT, player_dismissed TEXT, is_wicket INTEGER
             )
         """)
-        connection.commit()
 
+    cursor.execute("SELECT COUNT(*) FROM deliveries")
+    if cursor.fetchone()[0] == 0:
+        demo_data = [
+            ('m1', '2023', '2023-04-01', 'Wankhede', 1, 1.1, 0, 'V Kohli', 'RG Sharma', 'JJ Bumrah', 4, 0, 4, 0, 0, 0, 0, None, None, 0),
+            ('m1', '2023', '2023-04-01', 'Wankhede', 1, 1.2, 0, 'V Kohli', 'RG Sharma', 'JJ Bumrah', 6, 0, 6, 0, 0, 0, 0, None, None, 0),
+            ('m1', '2023', '2023-04-01', 'Wankhede', 1, 8.1, 8, 'Suryakumar Yadav', 'V Kohli', 'AR Patel', 4, 0, 4, 0, 0, 0, 0, None, None, 0),
+            ('m1', '2023', '2023-04-01', 'Wankhede', 1, 18.2, 17, 'Suryakumar Yadav', 'V Kohli', 'JJ Bumrah', 6, 0, 6, 0, 0, 0, 0, None, None, 0),
+            ('m1', '2023', '2023-04-01', 'Wankhede', 1, 19.5, 19, 'RG Sharma', 'V Kohli', 'B Kumar', 0, 0, 0, 0, 0, 0, 0, 'caught', 'RG Sharma', 1),
+        ]
+        insert_sql = "INSERT INTO deliveries VALUES (" + ",".join("?" for _ in range(20)) + ")"
+        for demo_match in range(30):
+            cursor.executemany(
+                insert_sql,
+                [(f"demo-{demo_match + 1}", *row[1:]) for row in demo_data],
+            )
+
+    connection.commit()
     return connection
 
 # Model Loader
