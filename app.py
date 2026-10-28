@@ -194,43 +194,18 @@ def get_db_connection():
 
     cursor = connection.cursor()
     cursor.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='deliveries'"
+        "SELECT name FROM sqlite_master WHERE type='table' "
+        "AND name IN ('player_batting_summary', 'player_bowling_summary')"
     )
-    if not cursor.fetchone():
-        cursor.execute("""
-            CREATE TABLE deliveries (
-                match_id TEXT, season TEXT, match_date TEXT, venue TEXT, innings INTEGER,
-                ball REAL, over_num INTEGER, batter TEXT, non_striker TEXT, bowler TEXT,
-                runs_batter INTEGER, runs_extra INTEGER, runs_total INTEGER,
-                is_wide INTEGER, is_noball INTEGER, is_bye INTEGER, is_legbye INTEGER,
-                dismissal_kind TEXT, player_dismissed TEXT, is_wicket INTEGER
-            )
-        """)
+    summary_tables = {row[0] for row in cursor.fetchall()}
+    required_tables = {"player_batting_summary", "player_bowling_summary"}
+    if summary_tables != required_tables:
+        connection.close()
+        raise RuntimeError(
+            "The database must contain player_batting_summary and "
+            "player_bowling_summary. Run aggregate_db.py before starting the app."
+        )
 
-    cursor.execute("SELECT COUNT(*) FROM deliveries")
-    if cursor.fetchone()[0] == 0:
-        demo_data = [
-            ('m1', '2023', '2023-04-01', 'Wankhede', 1, 1.1, 1, 'V Kohli', 'RG Sharma', 'JJ Bumrah', 4, 0, 4, 0, 0, 0, 0, None, None, 0),
-            ('m1', '2023', '2023-04-01', 'Wankhede', 1, 1.2, 2, 'V Kohli', 'RG Sharma', 'JJ Bumrah', 6, 0, 6, 0, 0, 0, 0, None, None, 0),
-            ('m1', '2023', '2023-04-01', 'Wankhede', 1, 2.1, 3, 'RG Sharma', 'V Kohli', 'B Kumar', 4, 0, 4, 0, 0, 0, 0, None, None, 0),
-            ('m1', '2023', '2023-04-01', 'Wankhede', 1, 3.1, 4, 'KL Rahul', 'V Kohli', 'B Kumar', 4, 0, 4, 0, 0, 0, 0, None, None, 0),
-            ('m1', '2023', '2023-04-01', 'Wankhede', 1, 8.1, 8, 'Suryakumar Yadav', 'V Kohli', 'AR Patel', 4, 0, 4, 0, 0, 0, 0, None, None, 0),
-            ('m1', '2023', '2023-04-01', 'Wankhede', 1, 9.1, 9, 'Suryakumar Yadav', 'V Kohli', 'AR Patel', 6, 0, 6, 0, 0, 0, 0, None, None, 0),
-            ('m1', '2023', '2023-04-01', 'Wankhede', 1, 10.1, 10, 'HH Pandya', 'Suryakumar Yadav', 'YS Chahal', 6, 0, 6, 0, 0, 0, 0, None, None, 0),
-            ('m1', '2023', '2023-04-01', 'Wankhede', 1, 16.1, 16, 'Suryakumar Yadav', 'HH Pandya', 'JJ Bumrah', 4, 0, 4, 0, 0, 0, 0, None, None, 0),
-            ('m1', '2023', '2023-04-01', 'Wankhede', 1, 17.1, 17, 'HH Pandya', 'Suryakumar Yadav', 'B Kumar', 6, 0, 6, 0, 0, 0, 0, None, None, 0),
-            ('m1', '2023', '2023-04-01', 'Wankhede', 1, 18.1, 18, 'Suryakumar Yadav', 'HH Pandya', 'JJ Bumrah', 6, 0, 6, 0, 0, 0, 0, None, None, 0),
-            ('m1', '2023', '2023-04-01', 'Wankhede', 1, 19.1, 19, 'HH Pandya', 'Suryakumar Yadav', 'B Kumar', 0, 0, 0, 0, 0, 0, 0, 'caught', 'HH Pandya', 1),
-            ('m1', '2023', '2023-04-01', 'Wankhede', 1, 19.2, 19, 'MS Dhoni', 'Suryakumar Yadav', 'B Kumar', 6, 0, 6, 0, 0, 0, 0, None, None, 0),
-        ]
-        insert_sql = "INSERT INTO deliveries VALUES (" + ",".join("?" for _ in range(20)) + ")"
-        for demo_match in range(40):
-            cursor.executemany(
-                insert_sql,
-                [(f"demo-{demo_match + 1}", *row[1:]) for row in demo_data],
-            )
-
-    connection.commit()
     return connection
 
 # Model Loader
@@ -247,13 +222,19 @@ conn = get_db_connection()
 # CACHED LISTS OF ALL BATSMEN AND BOWLERS FOR LIVE SEARCH SUGGESTIONS
 @st.cache_data
 def get_all_batters():
-    df = pd.read_sql_query("SELECT DISTINCT batter FROM deliveries ORDER BY batter ASC", conn)
-    return ["All Players"] + df['batter'].dropna().tolist()
+    df = pd.read_sql_query(
+        "SELECT DISTINCT player FROM player_batting_summary ORDER BY player ASC",
+        conn,
+    )
+    return ["All Players"] + df["player"].dropna().tolist()
 
 @st.cache_data
 def get_all_bowlers():
-    df = pd.read_sql_query("SELECT DISTINCT bowler FROM deliveries ORDER BY bowler ASC", conn)
-    return ["All Bowlers"] + df['bowler'].dropna().tolist()
+    df = pd.read_sql_query(
+        "SELECT DISTINCT player FROM player_bowling_summary ORDER BY player ASC",
+        conn,
+    )
+    return ["All Bowlers"] + df["player"].dropna().tolist()
 
 all_batters_list = get_all_batters()
 all_bowlers_list = get_all_bowlers()
@@ -308,7 +289,7 @@ selected_formats = []
 fmt_col1, fmt_col2 = st.sidebar.columns(2)
 for idx, fmt in enumerate(all_formats):
     target_col = fmt_col1 if idx % 2 == 0 else fmt_col2
-    default_state = True if fmt in ["T20I", "IPL"] else False
+    default_state = fmt in ["T20I", "ODI", "Test", "T20"]
     if target_col.checkbox(fmt, value=default_state, key=f"fmt_chk_{fmt}"):
         selected_formats.append(fmt)
 
@@ -455,31 +436,39 @@ with tab2:
         
     st.markdown('</div>', unsafe_allow_html=True)
     
-    phase_bounds = {
-        "Powerplay (Overs 1-6)": (0, 5),
-        "Middle Overs (Overs 7-15)": (6, 14),
-        "Death Overs (Overs 16-20)": (15, 19)
+    phase_names = {
+        "Powerplay (Overs 1-6)": "Powerplay",
+        "Middle Overs (Overs 7-15)": "Middle",
+        "Death Overs (Overs 16-20)": "Death",
     }
-    so, eo = phase_bounds[phase_choice]
-    
-    player_filter_sql = f"AND batter = '{search_batter}'" if search_batter != "All Players" else ""
-    
+
+    phase_filters = ["phase = ?", "year BETWEEN ? AND ?"]
+    phase_params = [phase_names[phase_choice], year_range[0], year_range[1]]
+    if selected_formats:
+        phase_filters.append(
+            f"format IN ({','.join('?' for _ in selected_formats)})"
+        )
+        phase_params.extend(selected_formats)
+    if search_batter != "All Players":
+        phase_filters.append("player = ?")
+        phase_params.append(search_batter)
+
     query_phase_deep = f"""
     SELECT 
-        batter AS "Batter",
-        SUM(runs_batter) AS "Phase Runs",
-        COUNT(CASE WHEN is_wide = 0 THEN 1 END) AS "Phase Balls",
-        ROUND(SUM(runs_batter) * 100.0 / COUNT(CASE WHEN is_wide = 0 THEN 1 END), 2) AS "Strike Rate",
-        ROUND(SUM(CASE WHEN runs_batter = 0 AND is_wide = 0 THEN 1 ELSE 0 END) * 100.0 / COUNT(CASE WHEN is_wide = 0 THEN 1 END), 2) AS "Dot Ball %",
-        ROUND(SUM(CASE WHEN runs_batter IN (4, 6) THEN 1 ELSE 0 END) * 100.0 / COUNT(CASE WHEN is_wide = 0 THEN 1 END), 2) AS "Boundary %"
-    FROM deliveries
-    WHERE over_num BETWEEN {so} AND {eo} {player_filter_sql}
-    GROUP BY batter
-    HAVING "Phase Balls" >= 30
+        player AS "Batter",
+        SUM(runs) AS "Phase Runs",
+        SUM(balls) AS "Phase Balls",
+        ROUND(SUM(runs) * 100.0 / NULLIF(SUM(balls), 0), 2) AS "Strike Rate",
+        ROUND(SUM(dot) * 100.0 / NULLIF(SUM(balls), 0), 2) AS "Dot Ball %",
+        ROUND((SUM(fours) + SUM(sixes)) * 100.0 / NULLIF(SUM(balls), 0), 2) AS "Boundary %"
+    FROM player_batting_summary
+    WHERE {' AND '.join(phase_filters)}
+    GROUP BY player
+    HAVING SUM(balls) >= 30
     ORDER BY "Strike Rate" DESC
     """
     
-    df_pdeep = pd.read_sql_query(query_phase_deep, conn)
+    df_pdeep = pd.read_sql_query(query_phase_deep, conn, params=phase_params)
     
     if not df_pdeep.empty:
         col1, col2 = st.columns([1.2, 0.8])
@@ -519,25 +508,33 @@ with tab3:
     search_bowler = st.selectbox("🔍 Search & Select Bowler (Type to Filter)", all_bowlers_list, index=0)
     st.markdown('</div>', unsafe_allow_html=True)
     
-    bowler_sql = f"AND bowler = '{search_bowler}'" if search_bowler != "All Bowlers" else ""
-    
+    bowling_filters = ["phase = 'Death'", "year BETWEEN ? AND ?"]
+    bowling_params = [year_range[0], year_range[1]]
+    if selected_formats:
+        bowling_filters.append(
+            f"format IN ({','.join('?' for _ in selected_formats)})"
+        )
+        bowling_params.extend(selected_formats)
+    if search_bowler != "All Bowlers":
+        bowling_filters.append("player = ?")
+        bowling_params.append(search_bowler)
+
     query_death = f"""
     SELECT 
-        bowler AS "Bowler",
-        COUNT(DISTINCT match_id) AS "Matches",
-        ROUND(COUNT(CASE WHEN is_wide = 0 AND is_noball = 0 THEN 1 END) / 6.0, 1) AS "Death Overs",
-        SUM(runs_total) AS "Runs Conceded",
-        SUM(CASE WHEN is_wicket = 1 AND dismissal_kind NOT IN ('run out', 'retired hurt') THEN 1 ELSE 0 END) AS "Wickets",
-        ROUND(SUM(runs_total) * 6.0 / COUNT(CASE WHEN is_wide = 0 AND is_noball = 0 THEN 1 END), 2) AS "Economy",
-        ROUND(SUM(CASE WHEN runs_batter = 0 AND is_wide = 0 AND is_noball = 0 THEN 1 ELSE 0 END) * 100.0 / COUNT(CASE WHEN is_wide = 0 AND is_noball = 0 THEN 1 END), 2) AS "Dot %"
-    FROM deliveries
-    WHERE over_num >= 15 {bowler_sql}
-    GROUP BY bowler
-    HAVING "Death Overs" >= 5
+        player AS "Bowler",
+        ROUND(SUM(balls_bowled) / 6.0, 1) AS "Death Overs",
+        SUM(runs_conceded) AS "Runs Conceded",
+        SUM(wickets) AS "Wickets",
+        ROUND(SUM(runs_conceded) * 6.0 / NULLIF(SUM(balls_bowled), 0), 2) AS "Economy",
+        ROUND(SUM(dot) * 100.0 / NULLIF(SUM(balls_bowled), 0), 2) AS "Dot %"
+    FROM player_bowling_summary
+    WHERE {' AND '.join(bowling_filters)}
+    GROUP BY player
+    HAVING SUM(balls_bowled) >= 30
     ORDER BY "Economy" ASC
     """
     
-    df_death = pd.read_sql_query(query_death, conn)
+    df_death = pd.read_sql_query(query_death, conn, params=bowling_params)
     
     if not df_death.empty:
         top1 = df_death.iloc[0]
@@ -685,19 +682,34 @@ with tab5:
     
     st.markdown('</div>', unsafe_allow_html=True)
     
-    q_deep_p = f"""
-    SELECT 
-        batter,
-        SUM(runs_batter) as total_runs,
-        COUNT(CASE WHEN is_wide = 0 THEN 1 END) as balls,
-        ROUND(SUM(runs_batter)*100.0/COUNT(CASE WHEN is_wide = 0 THEN 1 END),2) as sr,
-        SUM(CASE WHEN runs_batter = 4 THEN 1 ELSE 0 END) as fours,
-        SUM(CASE WHEN runs_batter = 6 THEN 1 ELSE 0 END) as sixes
-    FROM deliveries 
-    WHERE batter = '{scout_player}'
-    GROUP BY batter
-    """
-    df_scout_res = pd.read_sql_query(q_deep_p, conn)
+    if selected_formats:
+        format_placeholders = ",".join("?" for _ in selected_formats)
+        q_deep_p = f"""
+        SELECT
+            player AS batter,
+            SUM(runs) AS total_runs,
+            SUM(balls) AS balls,
+            ROUND(SUM(runs) * 100.0 / NULLIF(SUM(balls), 0), 2) AS sr,
+            SUM(fours) AS fours,
+            SUM(sixes) AS sixes
+        FROM player_batting_summary
+        WHERE player = ?
+            AND format IN ({format_placeholders})
+            AND year BETWEEN ? AND ?
+        GROUP BY player
+        """
+        df_scout_res = pd.read_sql_query(
+            q_deep_p,
+            conn,
+            params=[
+                scout_player,
+                *selected_formats,
+                year_range[0],
+                year_range[1],
+            ],
+        )
+    else:
+        df_scout_res = pd.DataFrame()
     
     if not df_scout_res.empty:
         row_p = df_scout_res.iloc[0]
