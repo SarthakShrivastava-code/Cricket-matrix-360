@@ -239,6 +239,117 @@ def get_all_bowlers():
 all_batters_list = get_all_batters()
 all_bowlers_list = get_all_bowlers()
 
+
+def get_player_batting_metrics(connection, player_name, formats, year_range):
+    if not formats:
+        return None
+
+    format_placeholders = ",".join("?" for _ in formats)
+    filters = (
+        f"player = ? AND format IN ({format_placeholders}) "
+        "AND year BETWEEN ? AND ?"
+    )
+    params = [player_name, *formats, year_range[0], year_range[1]]
+    overall = pd.read_sql_query(
+        f"""
+        SELECT SUM(runs) AS total_runs, SUM(balls) AS total_balls,
+               SUM(dismissed) AS total_outs, SUM(dot) AS total_dots
+        FROM player_batting_summary
+        WHERE {filters}
+        """,
+        connection,
+        params=params,
+    )
+    row = overall.iloc[0]
+    if pd.isna(row["total_balls"]) or row["total_balls"] == 0:
+        return None
+
+    phase_rows = pd.read_sql_query(
+        f"""
+        SELECT phase, SUM(runs) AS runs, SUM(balls) AS balls
+        FROM player_batting_summary
+        WHERE {filters}
+        GROUP BY phase
+        """,
+        connection,
+        params=params,
+    )
+    phase_srs = {
+        phase_row["phase"]: round(phase_row["runs"] / phase_row["balls"] * 100, 1)
+        for _, phase_row in phase_rows.iterrows()
+        if phase_row["balls"] > 0
+    }
+
+    runs = int(row["total_runs"] or 0)
+    balls = int(row["total_balls"])
+    outs = int(row["total_outs"] or 0)
+    dots = int(row["total_dots"] or 0)
+    return {
+        "runs": runs,
+        "avg": round(runs / outs, 1) if outs > 0 else runs,
+        "sr": round(runs / balls * 100, 1),
+        "powerplay_sr": phase_srs.get("Powerplay", "N/A"),
+        "middle_sr": phase_srs.get("Middle", "N/A"),
+        "death_sr": phase_srs.get("Death", "N/A"),
+        "dot_pct": round(dots / balls * 100, 1),
+    }
+
+
+def get_player_bowling_metrics(connection, player_name, formats, year_range):
+    if not formats:
+        return None
+
+    format_placeholders = ",".join("?" for _ in formats)
+    filters = (
+        f"player = ? AND format IN ({format_placeholders}) "
+        "AND year BETWEEN ? AND ?"
+    )
+    params = [player_name, *formats, year_range[0], year_range[1]]
+    overall = pd.read_sql_query(
+        f"""
+        SELECT SUM(runs_conceded) AS runs_given,
+               SUM(balls_bowled) AS balls_bowled,
+               SUM(wickets) AS total_wickets, SUM(dot) AS total_dots
+        FROM player_bowling_summary
+        WHERE {filters}
+        """,
+        connection,
+        params=params,
+    )
+    row = overall.iloc[0]
+    if pd.isna(row["balls_bowled"]) or row["balls_bowled"] == 0:
+        return None
+
+    phase_rows = pd.read_sql_query(
+        f"""
+        SELECT phase, SUM(runs_conceded) AS runs, SUM(balls_bowled) AS balls
+        FROM player_bowling_summary
+        WHERE {filters}
+        GROUP BY phase
+        """,
+        connection,
+        params=params,
+    )
+    phase_econs = {
+        phase_row["phase"]: round(phase_row["runs"] * 6 / phase_row["balls"], 2)
+        for _, phase_row in phase_rows.iterrows()
+        if phase_row["balls"] > 0
+    }
+
+    runs_given = int(row["runs_given"] or 0)
+    balls_bowled = int(row["balls_bowled"])
+    wickets = int(row["total_wickets"] or 0)
+    dots = int(row["total_dots"] or 0)
+    return {
+        "wickets": wickets,
+        "econ": round(runs_given * 6 / balls_bowled, 2),
+        "powerplay_econ": phase_econs.get("Powerplay", "N/A"),
+        "middle_econ": phase_econs.get("Middle", "N/A"),
+        "death_econ": phase_econs.get("Death", "N/A"),
+        "dot_pct": round(dots / balls_bowled * 100, 1),
+    }
+
+
 # PDF Generator
 def generate_deep_pdf(player_name, stats_dict):
     if not REPORTLAB_AVAILABLE:
@@ -669,70 +780,143 @@ with tab3:
 with tab4:
     st.markdown('<div class="executive-card">', unsafe_allow_html=True)
     st.markdown('<h3 style="color: #000000 !important;">⚔️ Side-by-Side Player Comparison (Batsmen, Bowlers & All-Rounders)</h3>', unsafe_allow_html=True)
-    
     comp_type = st.radio("Select Comparison Category", ["Batsmen", "Bowlers", "All-Rounders"], horizontal=True)
-    
-    col1, col2 = st.columns(2)
-    
-    player_pool = all_bowlers_list if comp_type == "Bowlers" else all_batters_list
-
-    # Safe default selection fallback
-    default_p1 = "V Kohli" if "V Kohli" in player_pool else (player_pool[1] if len(player_pool) > 1 else player_pool[0])
-    default_p2 = "RG Sharma" if "RG Sharma" in player_pool else (player_pool[2] if len(player_pool) > 2 else player_pool[0])
-    
-    with col1:
-        p1_idx = player_pool.index(default_p1) if default_p1 in player_pool else 0
-        p1 = st.selectbox("🔍 Search & Select Player 1", player_pool, index=p1_idx)
-    with col2:
-        p2_idx = player_pool.index(default_p2) if default_p2 in player_pool else 0
-        p2 = st.selectbox("🔍 Search & Select Player 2", player_pool, index=p2_idx)
-        
     st.markdown('</div>', unsafe_allow_html=True)
-    
+
+    comparison_filters = [
+        f"format IN ({','.join('?' for _ in selected_formats)})",
+        "year BETWEEN ? AND ?",
+    ]
+    comparison_params = [
+        *selected_formats,
+        year_range[0],
+        year_range[1],
+    ]
+    batting_players = pd.read_sql_query(
+        f"""
+        SELECT DISTINCT player
+        FROM player_batting_summary
+        WHERE {' AND '.join(comparison_filters)}
+        ORDER BY player
+        """,
+        conn,
+        params=comparison_params,
+    )["player"].dropna().tolist()
+    bowling_players = pd.read_sql_query(
+        f"""
+        SELECT DISTINCT player
+        FROM player_bowling_summary
+        WHERE {' AND '.join(comparison_filters)}
+        ORDER BY player
+        """,
+        conn,
+        params=comparison_params,
+    )["player"].dropna().tolist()
+
     if comp_type == "Batsmen":
-        metrics_list = ['Total Runs', 'Strike Rate', 'Powerplay SR', 'Middle SR', 'Death SR', 'Dot %']
-        vals_p1 = [4000, 138.2, 122.5, 134.0, 185.2, 32.1]
-        vals_p2 = [3850, 140.5, 135.2, 128.4, 192.1, 38.0]
+        player_pool = batting_players
     elif comp_type == "Bowlers":
-        metrics_list = ['Wickets', 'Economy Rate', 'Powerplay Econ', 'Middle Econ', 'Death Econ', 'Dot %']
-        vals_p1 = [120, 7.8, 6.9, 7.2, 9.8, 42.0]
-        vals_p2 = [145, 8.1, 7.5, 7.8, 8.9, 39.5]
+        player_pool = bowling_players
     else:
-        metrics_list = ['Batting SR', 'Bowling Economy', 'Boundary %', 'Wickets', 'Death SR', 'Clutch Rating']
-        vals_p1 = [142.0, 8.2, 58.0, 65, 165.0, 84.0]
-        vals_p2 = [135.5, 7.4, 52.0, 92, 150.0, 88.0]
+        player_pool = sorted(set(batting_players).intersection(bowling_players))
 
-    c1, c2 = st.columns(2)
-    with c1:
-        st.markdown(f'<div class="executive-card"><h4 style="color:#000000;">👤 {p1} Metrics</h4>', unsafe_allow_html=True)
-        for m, v in zip(metrics_list, vals_p1):
-            st.write(f"**{m}:** {v}")
-        st.markdown('</div>', unsafe_allow_html=True)
-        
-    with c2:
-        st.markdown(f'<div class="executive-card"><h4 style="color:#000000;">👤 {p2} Metrics</h4>', unsafe_allow_html=True)
-        for m, v in zip(metrics_list, vals_p2):
-            st.write(f"**{m}:** {v}")
-        st.markdown('</div>', unsafe_allow_html=True)
+    if not player_pool:
+        st.info("No players have data for the selected formats and year range.")
+    else:
+        preferred_player = "Virat Kohli" if "Virat Kohli" in player_pool else player_pool[0]
+        second_preference = "Rohit Sharma" if "Rohit Sharma" in player_pool else (
+            player_pool[1] if len(player_pool) > 1 else player_pool[0]
+        )
+        col1, col2 = st.columns(2)
+        with col1:
+            p1 = st.selectbox(
+                "🔍 Search & Select Player 1",
+                player_pool,
+                index=player_pool.index(preferred_player),
+                key="comparison_player_1",
+            )
+        with col2:
+            p2 = st.selectbox(
+                "🔍 Search & Select Player 2",
+                player_pool,
+                index=player_pool.index(second_preference),
+                key="comparison_player_2",
+            )
 
-    st.markdown('<div class="executive-card">', unsafe_allow_html=True)
-    df_chart = pd.DataFrame({
-        'Metric': metrics_list * 2,
-        'Value': vals_p1 + vals_p2,
-        'Player': [p1] * len(metrics_list) + [p2] * len(metrics_list)
-    })
-    
-    fig_bar_comp = px.bar(
-        df_chart,
-        x='Metric',
-        y='Value',
-        color='Player',
-        barmode='group',
-        color_discrete_sequence=['#0F172A', '#64748B']
-    )
-    fig_bar_comp.update_layout(plot_bgcolor='white', paper_bgcolor='white', font=dict(color='#000000'))
-    st.plotly_chart(fig_bar_comp, use_container_width=True)
-    st.markdown('</div>', unsafe_allow_html=True)
+        def comparison_metrics(player):
+            metrics = []
+            if comp_type in {"Batsmen", "All-Rounders"}:
+                batting = get_player_batting_metrics(
+                    conn, player, selected_formats, year_range
+                )
+                if batting:
+                    metrics.extend([
+                        ("Total Runs", batting["runs"]),
+                        ("Batting Average", batting["avg"]),
+                        ("Strike Rate", batting["sr"]),
+                        ("Powerplay SR", batting["powerplay_sr"]),
+                        ("Middle SR", batting["middle_sr"]),
+                        ("Death SR", batting["death_sr"]),
+                        ("Batting Dot %", batting["dot_pct"]),
+                    ])
+            if comp_type in {"Bowlers", "All-Rounders"}:
+                bowling = get_player_bowling_metrics(
+                    conn, player, selected_formats, year_range
+                )
+                if bowling:
+                    metrics.extend([
+                        ("Wickets", bowling["wickets"]),
+                        ("Economy Rate", bowling["econ"]),
+                        ("Powerplay Econ", bowling["powerplay_econ"]),
+                        ("Middle Econ", bowling["middle_econ"]),
+                        ("Death Econ", bowling["death_econ"]),
+                        ("Bowling Dot %", bowling["dot_pct"]),
+                    ])
+            return metrics
+
+        player_metrics = {
+            player: comparison_metrics(player)
+            for player in dict.fromkeys((p1, p2))
+        }
+        card1, card2 = st.columns(2)
+        for card, player in ((card1, p1), (card2, p2)):
+            with card:
+                st.markdown(
+                    f'<div class="executive-card"><h4 style="color:#000000;">'
+                    f'👤 {player} Metrics</h4>',
+                    unsafe_allow_html=True,
+                )
+                metrics = player_metrics[player]
+                if metrics:
+                    for metric, value in metrics:
+                        st.write(f"**{metric}:** {value}")
+                else:
+                    st.info("No data for this player in the selected filters.")
+                st.markdown('</div>', unsafe_allow_html=True)
+
+        chart_rows = [
+            {"Metric": metric, "Value": value, "Player": player}
+            for player, metrics in player_metrics.items()
+            for metric, value in metrics
+            if isinstance(value, (int, float))
+        ]
+        if chart_rows:
+            st.markdown('<div class="executive-card">', unsafe_allow_html=True)
+            fig_bar_comp = px.bar(
+                pd.DataFrame(chart_rows),
+                x="Metric",
+                y="Value",
+                color="Player",
+                barmode="group",
+                color_discrete_sequence=["#0F172A", "#64748B"],
+            )
+            fig_bar_comp.update_layout(
+                plot_bgcolor="white",
+                paper_bgcolor="white",
+                font=dict(color="#000000"),
+            )
+            st.plotly_chart(fig_bar_comp, use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
 
 # -------------------------------------------------------------
 # TAB 5: DEEP SCOUTING BRIEF & PDF EXPORT
