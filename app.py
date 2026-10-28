@@ -280,24 +280,28 @@ st.sidebar.markdown("""
 
 st.sidebar.markdown("<h3 style='color: #000000 !important;'>🌐 Global Context Filters</h3>", unsafe_allow_html=True)
 
-# MULTISELECT FIXED: CLEAN TOGGLE PILLS LAYOUT WITH BLACK TEXT
-st.sidebar.markdown("<label style='color:#000000; font-weight:700;'>Match Format / League</label>", unsafe_allow_html=True)
+# CLEAN TOGGLE PILLS FOR INTERNATIONAL FORMATS
+st.sidebar.markdown("<label style='color:#000000; font-weight:700;'>Match Format</label>", unsafe_allow_html=True)
 
-all_formats = ["T20I", "IPL", "ODI", "Test", "T20"]
 selected_formats = []
-
 fmt_col1, fmt_col2 = st.sidebar.columns(2)
-for idx, fmt in enumerate(all_formats):
-    target_col = fmt_col1 if idx % 2 == 0 else fmt_col2
-    default_state = fmt in ["T20I", "ODI", "Test", "T20"]
-    if target_col.checkbox(fmt, value=default_state, key=f"fmt_chk_{fmt}"):
-        selected_formats.append(fmt)
+with fmt_col1:
+    if st.checkbox("T20I", value=True, key="fmt_chk_T20I"):
+        selected_formats.append("T20I")
+    if st.checkbox("ODI", value=True, key="fmt_chk_ODI"):
+        selected_formats.append("ODI")
+with fmt_col2:
+    if st.checkbox("Test", value=False, key="fmt_chk_Test"):
+        selected_formats.append("Test")
+
+if not selected_formats:
+    selected_formats = ["T20I"]
 
 year_range = st.sidebar.slider(
     "Era / Year Filter",
     min_value=2000,
     max_value=2026,
-    value=(2000, 2026)
+    value=(2011, 2026)
 )
 
 st.sidebar.markdown("""
@@ -430,20 +434,55 @@ with tab2:
     
     col1, col2 = st.columns(2)
     with col1:
-        phase_choice = st.selectbox("Select Match Phase", ["Powerplay (Overs 1-6)", "Middle Overs (Overs 7-15)", "Death Overs (Overs 16-20)"])
+        if selected_formats == ["Test"]:
+            st.info(
+                "Test phases compare the first two innings (setting) with "
+                "the third and fourth innings (pressure / chase)."
+            )
+            phase_options = [
+                "Innings 1 & 2 (Setting)",
+                "Innings 3 & 4 (Pressure / Chase)",
+            ]
+            phase_mapping = {
+                phase_options[0]: ["Setting"],
+                phase_options[1]: [
+                    "Third Innings Pressure",
+                    "Fourth Innings Chase",
+                ],
+            }
+        elif "ODI" in selected_formats and "T20I" not in selected_formats:
+            phase_options = [
+                "Powerplay (Overs 1–10)",
+                "Middle Overs (Overs 11–40)",
+                "Death Overs (Overs 41–50)",
+            ]
+            phase_mapping = dict(zip(
+                phase_options,
+                ["Powerplay", "Middle", "Death"],
+            ))
+        else:
+            phase_options = [
+                "Powerplay (Overs 1–6)",
+                "Middle Overs (Overs 7–15)",
+                "Death Overs (Overs 16–20)",
+            ]
+            phase_mapping = dict(zip(
+                phase_options,
+                ["Powerplay", "Middle", "Death"],
+            ))
+        phase_choice = st.selectbox("Select Match Phase", phase_options)
     with col2:
         search_batter = st.selectbox("🔍 Search & Select Player (Type to Filter)", all_batters_list, index=0)
         
     st.markdown('</div>', unsafe_allow_html=True)
     
-    phase_names = {
-        "Powerplay (Overs 1-6)": "Powerplay",
-        "Middle Overs (Overs 7-15)": "Middle",
-        "Death Overs (Overs 16-20)": "Death",
-    }
-
-    phase_filters = ["phase = ?", "year BETWEEN ? AND ?"]
-    phase_params = [phase_names[phase_choice], year_range[0], year_range[1]]
+    target_phases = phase_mapping[phase_choice]
+    phase_filters = ["year BETWEEN ? AND ?"]
+    phase_params = [year_range[0], year_range[1]]
+    phase_filters.append(
+        f"phase IN ({','.join('?' for _ in target_phases)})"
+    )
+    phase_params.extend(target_phases)
     if selected_formats:
         phase_filters.append(
             f"format IN ({','.join('?' for _ in selected_formats)})"
@@ -503,18 +542,49 @@ with tab2:
 # -------------------------------------------------------------
 with tab3:
     st.markdown('<div class="executive-card">', unsafe_allow_html=True)
-    st.markdown('<h3 style="color: #000000 !important;">⚡ Death Overs Bowling Performance (Overs 16–20)</h3>', unsafe_allow_html=True)
+    test_only = selected_formats == ["Test"]
+    if test_only:
+        st.markdown(
+            '<h3 style="color: #000000 !important;">'
+            '⚡ Late-Innings Pressure & Fourth Innings Specialists</h3>',
+            unsafe_allow_html=True,
+        )
+        st.caption(
+            "Displaying player statistics in fourth-innings pressure chases "
+            "for Test matches."
+        )
+        death_phase = "Fourth Innings Chase"
+        death_formats = ["Test"]
+        overs_label = "Fourth-Innings Overs"
+    else:
+        st.markdown(
+            '<h3 style="color: #000000 !important;">'
+            '⚡ Death Overs Bowling Performance</h3>',
+            unsafe_allow_html=True,
+        )
+        if "ODI" in selected_formats and "T20I" not in selected_formats:
+            st.caption(
+                "Evaluating Death Overs performance specifically for "
+                "**ODIs (Overs 41–50)**."
+            )
+        else:
+            st.caption(
+                "Evaluating Death Overs performance specifically for "
+                "**T20Is (Overs 16–20)**."
+            )
+        death_phase = "Death"
+        death_formats = [fmt for fmt in selected_formats if fmt in {"T20I", "ODI"}]
+        overs_label = "Death Overs"
     
     search_bowler = st.selectbox("🔍 Search & Select Bowler (Type to Filter)", all_bowlers_list, index=0)
     st.markdown('</div>', unsafe_allow_html=True)
     
-    bowling_filters = ["phase = 'Death'", "year BETWEEN ? AND ?"]
-    bowling_params = [year_range[0], year_range[1]]
-    if selected_formats:
-        bowling_filters.append(
-            f"format IN ({','.join('?' for _ in selected_formats)})"
-        )
-        bowling_params.extend(selected_formats)
+    bowling_filters = ["phase = ?", "year BETWEEN ? AND ?"]
+    bowling_params = [death_phase, year_range[0], year_range[1]]
+    bowling_filters.append(
+        f"format IN ({','.join('?' for _ in death_formats)})"
+    )
+    bowling_params.extend(death_formats)
     if search_bowler != "All Bowlers":
         bowling_filters.append("player = ?")
         bowling_params.append(search_bowler)
@@ -522,7 +592,7 @@ with tab3:
     query_death = f"""
     SELECT 
         player AS "Bowler",
-        ROUND(SUM(balls_bowled) / 6.0, 1) AS "Death Overs",
+        ROUND(SUM(balls_bowled) / 6.0, 1) AS "{overs_label}",
         SUM(runs_conceded) AS "Runs Conceded",
         SUM(wickets) AS "Wickets",
         ROUND(SUM(runs_conceded) * 6.0 / NULLIF(SUM(balls_bowled), 0), 2) AS "Economy",

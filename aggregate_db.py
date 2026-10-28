@@ -34,7 +34,6 @@ NAME_MAP = {
     "Babar Azam": "Babar Azam",
 }
 ALLOWED_MATCH_TYPES = {"Test", "ODI", "T20I", "T20"}
-EXCLUDED_EVENT_TERMS = ("league", "ipl", "bbl", "psl")
 MIN_YEAR = 2000
 MAX_YEAR = 2026
 FILE_BATCH_SIZE = 1000
@@ -63,22 +62,34 @@ def aggregate_match(file_path, batting, bowling):
 
     info = data.get("info", {})
     match_type = info.get("match_type", "")
+    team_type = info.get("team_type")
+    if match_type == "T20":
+        if team_type != "international":
+            return False
+        match_type = "T20I"
     if match_type not in ALLOWED_MATCH_TYPES:
         return False
-
-    event = info.get("event") or {}
-    event_name = event.get("name", "") if isinstance(event, dict) else str(event)
-    if any(term in event_name.lower() for term in EXCLUDED_EVENT_TERMS):
+    if team_type is not None and team_type != "international":
         return False
 
     year = match_year(info)
     if year is None:
         return False
 
-    for innings in data.get("innings", []):
+    for innings_index, innings in enumerate(data.get("innings", [])):
         for over_item in innings.get("overs", []):
             over_num = over_item.get("over", 0)
-            phase = "Powerplay" if over_num < 6 else "Middle" if over_num < 15 else "Death"
+            if match_type == "Test":
+                if innings_index < 2:
+                    phase = "Setting"
+                elif innings_index == 2:
+                    phase = "Third Innings Pressure"
+                else:
+                    phase = "Fourth Innings Chase"
+            elif match_type == "ODI":
+                phase = "Powerplay" if over_num < 10 else "Middle" if over_num < 40 else "Death"
+            else:
+                phase = "Powerplay" if over_num < 6 else "Middle" if over_num < 15 else "Death"
             for delivery in over_item.get("deliveries", []):
                 batter = clean_name(delivery.get("batter"))
                 bowler = clean_name(delivery.get("bowler"))
