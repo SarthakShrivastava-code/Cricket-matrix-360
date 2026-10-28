@@ -8,17 +8,30 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent
 JSON_FOLDER = BASE_DIR / "data" / "raw_jsons"
 DB_PATH = BASE_DIR / "data" / "cricket_matrix.db"
+# Standard Name Normalization Map (Abbreviations -> Full Names)
 NAME_MAP = {
-    "Virat Kohli": "V Kohli",
-    "Rohit Sharma": "RG Sharma",
+    "V Kohli": "Virat Kohli",
+    "RG Sharma": "Rohit Sharma",
     "Suryakumar Yadav": "Suryakumar Yadav",
     "SK Yadav": "Suryakumar Yadav",
-    "Jasprit Bumrah": "JJ Bumrah",
+    "JJ Bumrah": "Jasprit Bumrah",
+    "Jasprit Bumrah": "Jasprit Bumrah",
     "KL Rahul": "KL Rahul",
-    "Hardik Pandya": "HH Pandya",
-    "MS Dhoni": "MS Dhoni",
-    "Ravindra Jadeja": "R Jadeja",
-    "Bhuvaneshwar Kumar": "B Kumar",
+    "K L Rahul": "KL Rahul",
+    "HH Pandya": "Hardik Pandya",
+    "H K Pandya": "Hardik Pandya",
+    "MS Dhoni": "Mahendra Singh Dhoni",
+    "M S Dhoni": "Mahendra Singh Dhoni",
+    "R Jadeja": "Ravindra Jadeja",
+    "R A Jadeja": "Ravindra Jadeja",
+    "B Kumar": "Bhuvneshwar Kumar",
+    "R Pant": "Rishabh Pant",
+    "R P Pant": "Rishabh Pant",
+    "S Dhawan": "Shikhar Dhawan",
+    "SPD Smith": "Steve Smith",
+    "JE Root": "Joe Root",
+    "KS Williamson": "Kane Williamson",
+    "Babar Azam": "Babar Azam",
 }
 ALLOWED_MATCH_TYPES = {"Test", "ODI", "T20I", "T20"}
 EXCLUDED_EVENT_TERMS = ("league", "ipl", "bbl", "psl")
@@ -30,8 +43,8 @@ FILE_BATCH_SIZE = 1000
 def clean_name(name):
     if not name:
         return name
-    name = name.strip()
-    return NAME_MAP.get(name, name)
+    name_clean = name.strip()
+    return NAME_MAP.get(name_clean, name_clean)
 
 
 def match_year(info):
